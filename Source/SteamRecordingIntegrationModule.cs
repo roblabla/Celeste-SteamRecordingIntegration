@@ -60,23 +60,32 @@ public class SteamRecordingIntegrationModule : EverestModule {
     // We enter a new Area.
     private void Level_OnEnter(Session session, bool fromSaveData)
     {
-        areaStartTime = Stopwatch.GetTimestamp();
-        levelStartTime = Stopwatch.GetTimestamp();
+        // First, set the level name and gamemode to playing.
         string levelName = AreaData.Get(session.Area).Name + "/" + session.Level;
         Steamworks.SteamTimeline.SetTimelineStateDescription(levelName, 0);
         Steamworks.SteamTimeline.SetTimelineGameMode(Steamworks.ETimelineGameMode.k_ETimelineGameMode_Playing);
+
+        // Next, set all the stopwatches.
+        areaStartTime = Stopwatch.GetTimestamp();
+        levelStartTime = Stopwatch.GetTimestamp();
+        lastSpawnTime = Stopwatch.GetTimestamp();
     }
 
     // We transition from one level to the next within an area.
     private void Level_OnTransitionTo(Level level, LevelData next, Microsoft.Xna.Framework.Vector2 direction)
     {
+        // Change the level name to fit the one we transitioned to.
         string nextLevelName = AreaData.Get(level.Session.Area).Name + "/" + next.Name;
         Steamworks.SteamTimeline.SetTimelineStateDescription(next.Name, 0);
+
+        // Create an event for completing the previous level.
         string levelName = AreaData.Get(level.Session.Area).Name + "/" + level.Session.Level;
         float lastAttemptTime = (float)Stopwatch.GetElapsedTime(this.lastSpawnTime).TotalSeconds;
         this.MakeRangedEvent("steam_flag", "Screen Completed", "Screen completed", 1, lastAttemptTime, Steamworks.ETimelineEventClipPriority.k_ETimelineEventClipPriority_Standard);
 
+        // Set all the relevant stopwatches.
         levelStartTime = Stopwatch.GetTimestamp();
+        lastSpawnTime = Stopwatch.GetTimestamp();
     }
 
     // We end an Area, either because we completed it or because we died/saved and quitted/restarted.
@@ -86,6 +95,7 @@ public class SteamRecordingIntegrationModule : EverestModule {
         {
             case LevelExit.Mode.Completed:
             case LevelExit.Mode.CompletedInterlude:
+                // If the area is completed, make an event for it.
                 string levelName = AreaData.Get(level.Session.Area).Name;
                 float lastAttemptTime = (float)Stopwatch.GetElapsedTime(this.lastSpawnTime).TotalSeconds;
                 this.MakeRangedEvent("steam_heart", "Level Completed", "Level " + levelName + " completed", 1, lastAttemptTime, Steamworks.ETimelineEventClipPriority.k_ETimelineEventClipPriority_Featured);
@@ -97,6 +107,7 @@ public class SteamRecordingIntegrationModule : EverestModule {
             case LevelExit.Mode.CompletedInterlude:
             case LevelExit.Mode.GiveUp:
             case LevelExit.Mode.SaveAndQuit:
+                // If the user is quitting a Level, we need to set the gamemode to something other than Playing.
                 Steamworks.SteamTimeline.SetTimelineGameMode(Steamworks.ETimelineGameMode.k_ETimelineGameMode_Menus);
                 break;
         }
