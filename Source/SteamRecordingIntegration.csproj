@@ -1,12 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net7.0</TargetFramework>
+        <TargetFramework>net8.0</TargetFramework>
         <AssemblyName>SteamRecordingIntegration</AssemblyName>
         <RootNamespace>Celeste.Mod.SteamRecordingIntegration</RootNamespace>
         <LangVersion>latest</LangVersion>
+        <!-- We are checked out in the mods folder of a real Celeste installation. -->
         <CelestePrefix Condition="'$(CelestePrefix)' == '' And Exists('..\..\..\Celeste.dll')">..\..\..</CelestePrefix>
-        <CelestePrefix Condition="'$(CelestePrefix)' == ''">lib-stripped</CelestePrefix>
+        <!-- We are running locally. We'll download lib-stripped from within msbuild. -->
+        <CelestePrefix Condition="'$(CelestePrefix)' == ''">$(BaseIntermediateOutputPath)lib-stripped</CelestePrefix>
         <ZippedFiles>..\everest.yaml;..\bin\**\*.*;..\Audio\**\*.*;..\Dialog\**\*.*;..\Graphics\**\*.*;..\Ahorn\**\*.*;..\Loenn\**\*.*</ZippedFiles>
     </PropertyGroup>
 
@@ -17,7 +19,7 @@
     </ItemDefinitionGroup>
 
     <ItemGroup>
-        <PackageReference Include="MonoMod.RuntimeDetour" Version="25.0.2" PrivateAssets="all" ExcludeAssets="runtime" />
+        <PackageReference Include="MonoMod.RuntimeDetour" Version="25.2.3" PrivateAssets="all" ExcludeAssets="runtime" />
         <PackageReference Include="MonoMod.Patcher" Version="25.0.0-prerelease.2" />
         <PackageReference Include="CelesteAnalyzer" Version="*" />
     </ItemGroup>
@@ -40,10 +42,21 @@
         </ItemGroup>
         <PackageMod Files="@(FilesToPackage)" OutputPath="..\SteamRecordingIntegration.zip" />
     </Target>
-    
+
     <PropertyGroup>
         <PathMap>$(MSBuildProjectDirectory)=SteamRecordingIntegration/</PathMap>
     </PropertyGroup>
+
+    <!-- Download everest lib-stripped.zip -->
+    <Target Name="DownloadLibStripped" BeforeTargets="BeforeResolveReferences" Condition="'$(CelestePrefix)' == '$(BaseIntermediateOutputPath)lib-stripped' And !Exists('$(BaseIntermediateOutputPath)lib-stripped')">
+        <DownloadFile
+            SourceUrl="https://github.com/EverestAPI/Everest/releases/download/stable-1.5674.0/lib-stripped.zip"
+            DestinationFolder="$(BaseIntermediateOutputPath)" />
+        <Unzip
+            SourceFiles="$(BaseIntermediateOutputPath)lib-stripped.zip"
+            DestinationFolder="$(BaseIntermediateOutputPath)"
+            OverwriteReadOnlyFiles="true" />
+    </Target>
 
     <!-- Inline task used to create a .zip for the mod -->
     <UsingTask TaskName="PackageMod" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
@@ -58,7 +71,7 @@
             <![CDATA[
                 var projectDir = Path.Combine(@"$(ProjectDir)", ".."); // Go one level up, since we're inside the 'Source' directory
                 projectDir = Uri.UnescapeDataString(projectDir);
-            
+
                 if (File.Exists(OutputPath))
                     File.Delete(OutputPath);
 
@@ -68,29 +81,29 @@
                     {
                         string filePath = file.GetMetadata("FullPath");
                         string entryName = GetRelativePath(projectDir, filePath);
-                        
+
                         zip.CreateEntryFromFile(filePath, entryName);
                     }
                 }
-    
+
                 string GetRelativePath(string fromPath, string toPath)
                 {
                     if (string.IsNullOrEmpty(fromPath)) throw new ArgumentNullException(nameof(fromPath));
                     if (string.IsNullOrEmpty(toPath))   throw new ArgumentNullException(nameof(toPath));
-                
+
                     Uri fromUri = new Uri(fromPath);
                     Uri toUri = new Uri(toPath);
-                
+
                     if (fromUri.Scheme != toUri.Scheme) { return toPath; } // path can't be made relative.
-                
+
                     Uri relativeUri = fromUri.MakeRelativeUri(toUri);
                     string relativePath = Uri.UnescapeDataString(relativeUri.ToString());
-                
+
                     if (toUri.Scheme.Equals("file", StringComparison.InvariantCultureIgnoreCase))
                     {
                         relativePath = relativePath.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                     }
-                
+
                     return relativePath;
                 }
             ]]>
