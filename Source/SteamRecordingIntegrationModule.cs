@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace Celeste.Mod.SteamRecordingIntegration;
@@ -19,6 +20,7 @@ public class SteamRecordingIntegrationModule : EverestModule {
     private long areaStartTime = Stopwatch.GetTimestamp();
     private long levelStartTime = Stopwatch.GetTimestamp();
     private long lastSpawnTime = Stopwatch.GetTimestamp();
+    private bool loaded = false;
 
     public SteamRecordingIntegrationModule() {
         Instance = this;
@@ -32,12 +34,33 @@ public class SteamRecordingIntegrationModule : EverestModule {
     }
 
     public override void Load() {
+        try
+        {
+            this.LoadSteamworksTimeline();
+            loaded = true;
+            Everest.Events.Player.OnSpawn += Player_OnSpawn;
+            Everest.Events.Player.OnDie += Player_OnDie;
+            Everest.Events.Level.OnEnter += Level_OnEnter;
+            Everest.Events.Level.OnTransitionTo += Level_OnTransitionTo;
+            Everest.Events.Level.OnExit += Level_OnExit;
+        }
+        catch (System.TypeLoadException ex)
+        {
+            loaded = false;
+        }
+    }
+
+    // Move interaction with SteamTimeline in a separate function so we can
+    // catch the potential TypeLoadException if the Steamworks.DLL is outdated.
+    //
+    // This is necessary as TypeLoadException is not generated at the point
+    // where the type is used, but when entering a function that would use a
+    // type that does not exist. So in our case, the TypeLoadException would be
+    // thrown when calling UnloadSteamworksTimeline.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void LoadSteamworksTimeline()
+    {
         Steamworks.SteamTimeline.SetTimelineGameMode(Steamworks.ETimelineGameMode.k_ETimelineGameMode_Menus);
-        Everest.Events.Player.OnSpawn += Player_OnSpawn;
-        Everest.Events.Player.OnDie += Player_OnDie;
-        Everest.Events.Level.OnEnter += Level_OnEnter;
-        Everest.Events.Level.OnTransitionTo += Level_OnTransitionTo;
-        Everest.Events.Level.OnExit += Level_OnExit;
     }
 
     private void Player_OnSpawn(Player obj)
@@ -114,20 +137,32 @@ public class SteamRecordingIntegrationModule : EverestModule {
     }
 
     public override void Unload() {
+        if (loaded)
+        {
+            this.UnloadSteamworksTimeline();
+            Everest.Events.Player.OnSpawn -= Player_OnSpawn;
+            Everest.Events.Player.OnDie -= Player_OnDie;
+            Everest.Events.Level.OnEnter -= Level_OnEnter;
+            Everest.Events.Level.OnTransitionTo -= Level_OnTransitionTo;
+            Everest.Events.Level.OnExit -= Level_OnExit;
+        }
+    }
+
+    // Move interaction with SteamTimeline in a separate function so we can
+    // catch the potential TypeLoadException if the Steamworks.DLL is outdated.
+    // See the comment on LoadSteamworksTimeline for why this is necessary.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void UnloadSteamworksTimeline()
+    {
         Steamworks.SteamTimeline.ClearTimelineStateDescription(0);
         Steamworks.SteamTimeline.SetTimelineGameMode(Steamworks.ETimelineGameMode.k_ETimelineGameMode_Invalid);
-        Everest.Events.Player.OnSpawn -= Player_OnSpawn;
-        Everest.Events.Player.OnDie -= Player_OnDie;
-        Everest.Events.Level.OnEnter -= Level_OnEnter;
-        Everest.Events.Level.OnTransitionTo -= Level_OnTransitionTo;
-        Everest.Events.Level.OnExit -= Level_OnExit;
     }
 
     private void MakeRangedEvent(string icon, string title, string description, uint priority, float howFarBack, Steamworks.ETimelineEventClipPriority clipPriority)
     {
         // Make a ranged event for easy clipping.
         Steamworks.SteamTimeline.AddTimelineEvent(icon, title, description, priority, -howFarBack, howFarBack, clipPriority);
-        // And an instantaneous event so the logo shows up in the timeline. 
+        // And an instantaneous event so the logo shows up in the timeline.
         Steamworks.SteamTimeline.AddTimelineEvent(icon, title, description, 0, 0, 0, Steamworks.ETimelineEventClipPriority.k_ETimelineEventClipPriority_None);
     }
 }
